@@ -12,16 +12,13 @@ deploy_dir=`pwd`
 #	echo $change_log >> change.log
 #fi
 
-cd cadvisor_monitor
 go build run.go mylog.go
 [ $? -ne 0 ] && exit 1
-mv run ../
 
 go build uploadCadvisorData.go mylog.go getCadvisordata.go
 [ $? -ne 0 ] && exit 1
-mv uploadCadvisorData ../uploadCadvisorData_old
+mv uploadCadvisorData uploadCadvisorData_old
 
-cd $deploy_dir
 cp uploadCadvisorData_old uploadCadvisorData_new
 
 a=`git log|awk 'NR==1'|awk '{ print $2 }'`
