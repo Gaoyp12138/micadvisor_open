@@ -43,11 +43,11 @@ func pushData() {
 		DockerData, _ := getDockerData(containerId) //get container inspect
 
 		endpoint := getEndPoint(DockerData) //there is the hosts file path in the inpect of container
-		//marathonId := getMarathonAppId(DockerData)
+		marathonId := getMarathonAppId(DockerData)
 
 		getCpuNum(DockerData) //we need to give the container CPU ENV
 
-		tag := getTag(DockerData) //recode some other message for a container
+		tag := getTag(marathonId) //recode some other message for a container
 
 		ausge, busge := getUsageData(cadvDataForOneContainer[k]) //get 2 usage because some metric recoding Incremental metric
 
@@ -80,39 +80,6 @@ func getMarathonAppId(str string) string {
 		return res[1]
 	}
 	return ""
-}
-
-func pushIt(value, timestamp, metric, tags, containerId, counterType, endpoint string) error {
-	var (
-		err1 error
-		err  error
-	)
-	err1 = pushItSub(value, timestamp, metric, tags, containerId, counterType, endpoint)
-	err = pushItSub(value, timestamp, metric, "", containerId, counterType, endpoint)
-	if err1 != nil {
-		return err1
-	}
-	return err
-}
-
-func pushItSub(value, timestamp, metric, tags, containerId, counterType, endpoint string) error {
-	postThing := `[{"metric": "` + metric + `", "endpoint": "` + endpoint + `", "timestamp": ` + timestamp + `,"step": ` + "60" + `,"value": ` + value + `,"counterType": "` + counterType + `","tags": "` + tags + `"}]`
-	LogRun(postThing)
-	url := "http://127.0.0.1:1988/v1/push"
-	resp, err := http.Post(url,
-		"application/x-www-form-urlencoded",
-		strings.NewReader(postThing))
-	if err != nil {
-		LogErr(err, "Post err in pushIt")
-		return err
-	}
-	defer resp.Body.Close()
-	_, err1 := ioutil.ReadAll(resp.Body)
-	if err1 != nil {
-		LogErr(err1, "ReadAll err in pushIt")
-		return err1
-	}
-	return nil
 }
 
 func pushCount(metric, usageA, usageB, start, end string, countNum int, timestamp, tags, containerId, endpoint string, weight float64) error {
@@ -161,15 +128,17 @@ func pushNet(networkuage1, networkuage2, timestamp, tags, containerId, endpoint 
 
 func pushMem(memLimit, memoryusage, timestamp, tags, containerId, endpoint string) error {
 	LogRun("pushMem")
-	memUsageNum := getBetween(memoryusage, `"usage":`, `,"working_set"`)
+	memUsageNum := getBetween(memoryusage, `"usage":`, `,"`)
 	fenzi, _ := strconv.ParseInt(memUsageNum, 10, 64)
 	fenmu, err := strconv.ParseInt(memLimit, 10, 64)
+
 	if err == nil {
-		memUsage := float64(fenzi) / float64(fenmu)
+		memUsage := (float64(fenzi) / float64(fenmu)) * 100
 		if err := pushIt(fmt.Sprint(memUsage), timestamp, "mem.memused.percent", tags, containerId, "GAUGE", endpoint); err != nil {
 			LogErr(err, "pushIt err in pushMem")
 		}
 	}
+
 	if err := pushIt(memUsageNum, timestamp, "mem.memused", tags, containerId, "GAUGE", endpoint); err != nil {
 		LogErr(err, "pushIt err in pushMem")
 	}
@@ -178,9 +147,9 @@ func pushMem(memLimit, memoryusage, timestamp, tags, containerId, endpoint strin
 		LogErr(err, "pushIt err in pushMem")
 	}
 
-	memHotUsageNum := getBetween(memoryusage, `"working_set":`, `,"container_data"`)
+	memHotUsageNum := getBetween(memoryusage, `"working_set":`, `,"`)
 	fenzi, _ = strconv.ParseInt(memHotUsageNum, 10, 64)
-	memHotUsage := float64(fenzi) / float64(fenmu)
+	memHotUsage := (float64(fenzi) / float64(fenmu)) * 100
 	if err := pushIt(fmt.Sprint(memHotUsage), timestamp, "mem.memused.hot", tags, containerId, "GAUGE", endpoint); err != nil {
 		LogErr(err, "pushIt err in pushMem")
 	}
@@ -249,9 +218,17 @@ func getCpuNum(dockerdata string) {
 	}
 }
 
-func getTag(DockerData string) string {
-	//FIXME:if you need a tag, edit it, get message from dockerData
-	tags := ""
+func getTag(MARATHON_APP_ID string) string {
+	if !strings.Contains(MARATHON_APP_ID, "job") {
+		return ""
+	}
+	var tags string
+	MARATHON_APP_ID = strings.Replace(MARATHON_APP_ID, "/", "", -1)
+	tmp := strings.Split(MARATHON_APP_ID, "@")
+	for _, v := range tmp {
+		tags = tags + strings.Split(v, ".")[0] + "=" + strings.Split(v, ".")[1] + ","
+	}
+	tags = tags[:len(tags)-1]
 	return tags
 }
 
@@ -312,7 +289,7 @@ func getContainerId(cadvisorData string) string {
 }
 
 func getEndPoint(DockerData string) string {
-	endPoint := getBetween(DockerData, `"Endpoint=`, `",`)
+	endPoint := getBetween(DockerData, `"Endpoint=`, `"`)
 	if endPoint != "" {
 		return endPoint
 	}

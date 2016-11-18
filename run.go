@@ -26,6 +26,12 @@ type V struct {
 }
 
 func main() {
+	cmd := exec.Command("/home/work/uploadCadviosrData/umount.sh")
+	err := cmd.Run()
+	if err != nil {
+		LogErr(err, "umount error")
+	}
+
 	var suffix string
 	ver, err := getDockerVer()
 	if err != nil {
@@ -42,15 +48,19 @@ func main() {
 		os.Exit(1)
 	}
 	go func() {
+		retryTime := 3
 		cmd := exec.Command("/home/work/uploadCadviosrData/cadvisor" + suffix)
-		if err := cmd.Start(); err != nil {
-			LogErr(err, "start cadvisor fail")
-			return
-		}
+		for i := 0; i < retryTime; i++ {
+			if err := cmd.Start(); err != nil {
+				LogErr(err, "start cadvisor fail")
+				return
+			}
 
-		LogRun("start cadvisor ok")
-		cmd.Wait()
-		LogErr(errors.New("cadvisor down"), "restart cadvisor")
+			LogRun("start cadvisor ok")
+			cmd.Wait()
+			LogErr(errors.New("cadvisor down"), "restart cadvisor")
+		}
+		os.Exit(1)
 	}()
 
 	go func() {
